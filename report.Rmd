@@ -1,0 +1,350 @@
+---
+title: "aquaponics microbiome"
+author: "Demitri"
+date: "4/3/2020"
+output: 
+  html_document:
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, results = FALSE)
+knitr::opts_knit$set(root.dir = "C:/Users/dlifg/Desktop/aquaponics sequence data/QIIME files/qiime2/")
+```
+## Import
+
+get qiime files into R. I use *Phyloseq* to 
+
+- clean up irregularites in taxonomy table
+- remove ASVs associated with mitochondria and chloroplast
+- rename ASV (e.g. ASV1, ASV2, etc.)
+- make transformation to ratios
+- normalize via rarefaction
+
+
+```{r}
+library("biomformat")
+library("phyloseq")
+library("ggplot2")
+library("Biostrings")
+library("tidyverse")
+library("gridExtra")
+library("vegan")
+
+tree = "tree.nwk"
+map = "meta.txt"
+repseq = "dna-sequences.fasta"
+biom = read_biom("table-with-taxonomy.biom")
+data = import_biom(biom, tree, parseFunction = parse_taxonomy_greengenes)
+
+#update and fix sample_data
+meta = import_qiime_sample_data(map)
+sample_data(data) = meta
+
+#reference sequences
+bs = readDNAStringSet(repseq)
+data = merge_phyloseq(data, bs)
+
+#remove mistaken taxanomic ranks
+tax_table(data) <- tax_table(data)[, 1:7]
+
+#remove chloroplasts & mitochondria
+data = subset_taxa(data, Family != "Mitochondria" & Class != "Chloroplast" & Family != "mitochondria" )
+
+#rename OTU names
+taxa_names(data) = paste0("ASV",seq(ntaxa(data)))
+
+#transform abundance to ratio
+data_r = transform_sample_counts(data, function(x) 100* x/sum(x))
+
+#rarefy to min. sequence count
+rngseed1=100
+data_rarefy = rarefy_even_depth(data, sample.size = min(sample_sums(data)), rngseed = rngseed1, replace = TRUE, trimOTUs = TRUE, verbose = TRUE)
+data_rarefy_r = transform_sample_counts(data_rarefy, function(x) 100* x/sum(x))
+
+```
+```{r}
+sequence_sum = sample_sums(data)
+otu_sum = apply(otu_table(data)>0, 2, sum)
+sample_info = as.data.frame(cbind(as(sample_data(data), "matrix"), sequence_sum, otu_sum)) %>%
+  select(Tank, Type, sequence_sum, otu_sum)%>%
+  rename(Sequences = sequence_sum, ASVs = otu_sum)
+
+#reorder rows
+slist = paste0(rep("sample-", times = 16), seq.int(1,16), "")
+sample_info = sample_info[slist,]
+```
+
+There is a total of `r prettyNum(sum(sequence_sum), big.mark = ",")` quality filtered reads and `r ntaxa(data)` ASVs in the data set. The average reads per sample is `r prettyNum(mean(sequence_sum), big.mark = ",")` The lowest count is `r prettyNum(min(sequence_sum), big.mark = ",")` in sample 10 and the highest is `r prettyNum(max(sequence_sum), big.mark = ",")` in sample 1. An overview of the samples is shown in the following table.
+
+```{r echo = FALSE, results = 'asis'}
+library(rmarkdown)
+paged_table(sample_info)
+
+```
+
+
+## Rarefaction
+
+Rarefaction curves were produced using *vegan* function *rarecurve*. Each curve shows the number of ASVs or bacteria species found in a sample at different sequence counts. As the number of 16S sequences increases, the slope of all curves approach zero. This indicates that the sampling depth was satisfactory.
+
+```{r cache=TRUE}
+library(vegan)
+
+#function to transpose phyloseq OTU table into vegan OTU matrix 
+veganotu = function(physeq) {
+  require("vegan")
+  OTU = otu_table(physeq)
+  if (taxa_are_rows(OTU)) {
+    OTU = t(OTU)
+  }
+  return(as(OTU, "matrix"))
+}
+
+#transpose phyloseq table to vegan-compatible matrix 
+rcurve_data = veganotu(data)
+
+#xlimit at median sequences
+r = rarecurve(rcurve_data, step = 20, xlab = "16S Sequences", ylab = "ASVs", label = FALSE, xlim = c(0,17633))
+```
+
+## Alpha Diversity
+Richness and Eveness were used to compare the diversity within samples. Richness refers to the number of ASVs or species and eveness to how they are distrbuted. Pielou’s eveness index $$J=H/ln(S)$$ was derived using *vegan* function *diversity*. 
+
+Overall, the substrate environment had greater diversity than the water environment. The gut was signficantly less diverse than water and substrate enivornments.
+
+```{r cache=TRUE}
+#function to transpose phyloseq OTU table into vegan OTU matrix 
+veganotu = function(physeq) {
+  require("vegan")
+  OTU = otu_table(physeq)
+  if (taxa_are_rows(OTU)) {
+    OTU = t(OTU)
+  }
+  return(as(OTU, "matrix"))
+}
+
+#use rarefied counts
+v_data = veganotu(data_rarefy)
+
+#get sum of ASV's for each sample
+rich = specnumber(v_data)
+
+#Shannon diversity score
+H = diversity(v_data, index = "shannon")
+
+#Pielous's Eveness
+J <- H/log(specnumber(v_data))
+
+#make table 
+x = as.data.frame(cbind(as(sample_data(data), "matrix"), H, J, rich))
+x$H = as.numeric(as.character(x$H))
+x$J = as.numeric(as.character(x$J))
+x$rich = as.numeric(as.character(x$rich))
+
+
+p = ggplot(x, aes(x = Type, y = rich))+
+  geom_boxplot(coef =4, alpha = 0.5)+
+  geom_jitter(color = "black", size = 0.6, alpha = 0.9)+
+  ylab("Richness")+
+  xlab("")
+
+pp = ggplot(x, aes(x = Type, y = H))+
+  stat_boxplot(coef = 4, alpha = 0.5)+
+  geom_jitter(color = "black", size = 0.6, alpha = 0.9)+
+  ylab("Pielous's Evenness")+
+  xlab("")
+grid.arrange(p,pp, nrow = 1)
+```
+
+High diversity in the substrate environment is indicative of biofilm. Biofilm 
+
+
+## Beta Diversity
+
+### Hierarchical cluster analysis
+
+Hierarachcical clustering of Bray-Curtis dissimilarity matrix using Average-linkage method from package *hclust* shows clustering of samples by Type. Substrate samples from the same tank form discrete clusters while water samples are more ambigious. 
+
+```{r}
+source('C:/Users/dlifg/Desktop/aquaponics sequence data/QIIME files/qiime2/scripts/plot_dendrogram.R')
+plot_dendrogram(data_rarefy,"average", "Tank")
+```
+
+### Non-metric dimensional scaling (NMDS)
+
+NMDS ordination of Bray-Curtis distance using *vegan* function *metaMDS* with dimensions, k = 5 and stress = 0.012. Ellipses 
+validates hierarchical clustery of samples by Type. 
+
+```{r}
+#convert phyloseq sample data into data frame
+v_meta = as.data.frame(as.matrix(sample_data(data_rarefy)))
+
+#picked 5 dimenstions (k = 5) as stress 
+bc.nmds = metaMDS(v_data, distance = "bray", k = 5, trymax = 100) 
+
+par(mar=c(5.1, 4.1, 4.1, 8.1), xpd=TRUE)
+plot(bc.nmds, type = "n")
+points(bc.nmds, display = "sites", col=c("grey45","darkred", "darkblue")[v_meta$Type])
+ordiellipse(bc.nmds, groups = v_meta$Type, kind = "se", conf = .99, draw = "lines", col = c("grey45","darkred", "darkblue"), label = TRUE, alpha = 100)
+
+#legend("topright", legend = c("gut", "substrate", "water"), col = c("grey45","darkred", "darkblue"), 
+#       pch=20, inset = c(-0.2,0), title = "Sample Type", y.intersp = 1, x.intersp = 1, bty = "n", pt.cex = 2)
+```
+
+### Adonis
+
+```{r}
+doadonis <- function(physeq, category, distance) {
+  bdist <- phyloseq::distance(physeq, distance)
+  col <- as(sample_data(physeq), "data.frame")[ ,category]
+  
+  # Adonis test -- do the centroid differ according to category (i.e sampele type)
+  adonis.bdist <- adonis(bdist ~ col)
+  print("Adonis results:")
+  print(adonis.bdist)
+  
+  # Homogeneity of dispersion test -- does the variance of the communties differ according to category (i.e. sample type)
+  betatax = betadisper(bdist,col)
+  p = permutest(betatax)
+  print("Betadisper results:")
+  print(p$tab)
+}
+
+doadonis(data_rarefy, "Type", "bray")
+```
+
+
+
+## Composition
+
+### Phylum-level
+
+Bar plots showing the abundance of phyla was generated in *ggplot*. Any phyla contributing less than 1% of total abundance in any one sample were grouped together in category: **<1%**.
+
+```{r fig.height = 10, cache = TRUE}
+source('C:/Users/dlifg/Desktop/aquaponics sequence data/QIIME files/qiime2/scripts/plot_phylum.R')
+plot_phylum(data_rarefy_r)
+```
+
+In total, 15 different phyla were identified with 11 contributing over 99% of the abundance in any given sample. Bacteriodetes, Proteobacteria, Fusobacteria, Verrucomicrobia, and Actinobacteria were the most prevelant in all samples but differences were seen in the different environment types. Proteobacteria made up  only 1%-2% of the gut community but were enriched in water and substrate environments making up between 22% - 44% of the community. Actinobacteria was prevelent in the water environment (19% average abundance) but much less so in substrate enivornment (2% average abundance). Planctomycetes, Chlorflexi, and Acidobacteria on the other hand were all more prevelant in the substrate environment. Only Nitrospirae showed any tank specific localization, as it was only prevelant in the biofilter substrate site. 
+
+### ASV-level
+
+Heatmat generated with *heatmap.2* shows the general composition of the system. Only ASV's making up at least 1% of the abundance in any single sample are included. Samples (columns) are ordered by clustering of Bray-Curtis dissimilarity of the samples entire community (same as the previous figure). ASVs (rows) are ordered by Euclidean distance based clustering. Phylum and the highest taxonomic level is shown for each ASV. The number in brackets indicate the how many ASVs have that particular taxonomy.
+
+```{r fig.height= 10, cache=TRUE}
+source('C:/Users/dlifg/Desktop/aquaponics sequence data/QIIME files/qiime2/scripts/ASV_heatmap.R')
+hmap(data_rarefy_r,1)
+```
+
+Looking at the community composition at an ASV-level further indicates some differences in community in the different environment types. Several species 
+
+## ASV's driving the the dissimlarity between water, substrate and gut environments
+
+In an attempt to discover which ASVs are causing the water, substrate, and gut communities to differ, I tried out several methods.
+
+### Method one: indicator species analysis in *indicspecies* package.
+
+Function *multipatt* was used to determine a list of ASVs that are associated to the the three different environment types: gut, water, and substrate
+
+```{r}
+library(indicspecies)
+library(vegan)
+
+#function to transpose phyloseq OTU table into vegan OTU matrix 
+veganotu = function(physeq) {
+  require("vegan")
+  OTU = otu_table(physeq)
+  if (taxa_are_rows(OTU)) {
+    OTU = t(OTU)
+  }
+  return(as(OTU, "matrix"))
+}
+
+v_data = veganotu(data_rarefy)
+
+#psyloseq meta data to data.frame
+v_meta = as.data.frame(as.matrix(sample_data(data)))
+
+#make sure rows are in same order 
+row.names(v_data) == row.names(v_meta)
+                        
+indspec = multipatt(v_data, v_meta$Type, func = "r.g", control = how(nperm=999))
+
+indspec.sign<-as.data.frame(indspec$sign, keep.rownames=TRUE)
+
+indspec_gut = indspec.sign[,c("s.gut", "stat", "p.value")] 
+indspec_gut = subset(indspec_gut, s.gut==1 & p.value <= 0.05)
+indspec_gut = cbind(indspec_gut, as(tax_table(data)[rownames(indspec_gut), ], "matrix"))
+indspec_gut = select(indspec_gut, select= -c(s.gut, Kingdom))
+
+indpsec_water = indspec.sign[,c("s.water", "stat", "p.value")] 
+indpsec_water = subset(indpsec_water, s.water==1 & p.value <= 0.05)
+indpsec_water = cbind(indpsec_water, as(tax_table(data)[rownames(indpsec_water), ], "matrix"))
+indpsec_water = subset(indpsec_water, select = -c(s.water, Kingdom))
+
+indpsec_substrate = indspec.sign[,c("s.substrate", "stat", "p.value")] 
+indpsec_substrate = subset(indpsec_substrate, s.substrate==1 & p.value <= 0.05)
+indpsec_substrate =  cbind(indpsec_substrate, as(tax_table(data)[rownames(indpsec_substrate), ], "matrix"))
+indpsec_substrate = subset(indpsec_substrate, select = -c(s.substrate, Kingdom))
+```
+
+```{r echo = FALSE, results = 'asis'}
+library(rmarkdown)
+paged_table(indspec_gut)
+paged_table(indpsec_water)
+paged_table(indpsec_substrate)
+```
+
+### Method 2: Deseq2 differential abundance
+
+```{r echo = FALSE}
+library(DESeq2)
+
+#use unrarefied data
+#remove gut samples because the low number of gut samples could skew results
+data_noGut = subset_samples(data, Type != "gut")
+
+diagdds = phyloseq_to_deseq2(data_noGut, ~ Type)
+gm_mean = function(x, na.rm=TRUE){
+  exp(sum(log(x[x > 0]), na.rm=na.rm) / length(x))
+}
+geoMeans = apply(counts(diagdds), 1, gm_mean)
+diagdds = estimateSizeFactors(diagdds, geoMeans = geoMeans)
+diagdds = DESeq(diagdds, fitType="local")
+
+res = results(diagdds)
+res = res[order(res$padj, na.last=NA), ]
+alpha = 0.01
+sigtab = res[(res$padj < alpha), ]
+sigtab = cbind(as(sigtab, "data.frame"), as(tax_table(data_noGut)[rownames(sigtab), ], "matrix"))
+head(sigtab)
+
+posigtab = sigtab[sigtab[, "log2FoldChange"] > 0, ]
+posigtab = posigtab[, c("baseMean", "log2FoldChange", "lfcSE", "padj", "Phylum", "Class", "Family", "Genus", "Species")]
+
+```
+```{r echo=FALSE, results = 'asis'}
+library(rmarkdown)
+paged_table(posigtab)
+
+```
+
+### Method 3: SIMPER
+
+SIMPER assesses the average percent contribution of individual ASV's to the dissimilarity of sample types
+
+```{r echo = FALSE}
+simp = simper(v_data, v_meta$Type, permutations=100)
+simp_sum = summary(simp)
+
+water_substrate = simp_sum$water_substrate[1:10,]
+water_substrate =  cbind(water_substrate, as(tax_table(data)[rownames(water_substrate), ], "matrix"))
+
+```
+```{r echo=FALSE, results = 'asis'}
+library(rmarkdown)
+paged_table(water_substrate)
+```
+
