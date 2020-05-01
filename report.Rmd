@@ -4,8 +4,9 @@ author: "Demitri"
 date: "4/3/2020"
 output: 
   html_document:
-    keep_md: TRUE
     code_folding: hide
+bibliography: references.bib
+link-citations: yes  
 ---
 
 ```{r setup, include=FALSE}
@@ -89,7 +90,7 @@ paged_table(sample_info)
 
 Rarefaction curves were produced using *vegan* function *rarecurve*. Each curve shows the number of ASVs or bacteria species found in a sample at different sequence counts. As the number of 16S sequences increases, the slope of all curves approach zero. This indicates that the sampling depth was satisfactory.
 
-```{r cache=TRUE}
+```{r}
 library(vegan)
 
 #function to transpose phyloseq OTU table into vegan OTU matrix 
@@ -195,7 +196,7 @@ ordiellipse(bc.nmds, groups = v_meta$Type, kind = "se", conf = .99, draw = "line
 
 ### Adonis
 
-```{r}
+```{r results = TRUE }
 doadonis <- function(physeq, category, distance) {
   bdist <- phyloseq::distance(physeq, distance)
   col <- as(sample_data(physeq), "data.frame")[ ,category]
@@ -223,23 +224,24 @@ doadonis(data_rarefy, "Type", "bray")
 
 Bar plots showing the abundance of phyla was generated in *ggplot*. Any phyla contributing less than 1% of total abundance in any one sample were grouped together in category: **<1%**.
 
-```{r fig.height = 10, cache = TRUE}
+```{r fig.height = 6}
 source('C:/Users/dlifg/Desktop/aquaponics sequence data/QIIME files/qiime2/scripts/plot_phylum.R')
 plot_phylum(data_rarefy_r)
 ```
 
-In total, 15 different phyla were identified with 11 contributing over 99% of the abundance in any given sample. Bacteriodetes, Proteobacteria, Fusobacteria, Verrucomicrobia, and Actinobacteria were the most prevelant in all samples but differences were seen in the different environment types. Proteobacteria made up  only 1%-2% of the gut community but were enriched in water and substrate environments making up between 22% - 44% of the community. Actinobacteria was prevelent in the water environment (19% average abundance) but much less so in substrate enivornment (2% average abundance). Planctomycetes, Chlorflexi, and Acidobacteria on the other hand were all more prevelant in the substrate environment. Only Nitrospirae showed any tank specific localization, as it was only prevelant in the biofilter substrate site. 
+In total, 15 different phyla were identified with 11 contributing over 99% of the abundance in any given sample. Bacteriodetes, Proteobacteria, Fusobacteria, Verrucomicrobia, and Actinobacteria were the most prevelant in all samples but differences were seen in the different environment types. Proteobacteria made up  only 1%-2% of the gut community but were enriched in water and substrate environments making up between 22% - 44% of the community. Actinobacteria was prevelent in the water environment (19% average abundance) but much less so in substrate enivornment (2% average abundance). Planctomycetes, Chlorflexi, and Acidobacteria on the other hand were more prevelant in the substrate environment. Only Nitrospirae showed any tank specific localization, as it was only prevelant in the biofilter substrate site. 
 
 ### ASV-level
 
-Heatmat generated with *heatmap.2* shows the general composition of the system. Only ASV's making up at least 1% of the abundance in any single sample are included. Samples (columns) are ordered by clustering of Bray-Curtis dissimilarity of the samples entire community (same as the previous figure). ASVs (rows) are ordered by Euclidean distance based clustering. Phylum and the highest taxonomic level is shown for each ASV. The number in brackets indicate the how many ASVs have that particular taxonomy.
+Heatmat generated with *heatmap.2* shows the general composition of the system. Only ASV's making up at least 1% of the abundance in any single sample are included. Samples (columns) are ordered by clustering of Bray-Curtis dissimilarity of the samples entire community. ASVs (rows) are ordered by Euclidean distance based clustering. Phylum and the highest taxonomic level is shown for each ASV. The number in brackets indicate the number of ASVs with identical taxonomy.
 
-```{r fig.height= 10, cache=TRUE}
+```{r fig.height= 10}
 source('C:/Users/dlifg/Desktop/aquaponics sequence data/QIIME files/qiime2/scripts/ASV_heatmap.R')
 hmap(data_rarefy_r,1)
 ```
 
-Looking at the community composition at an ASV-level further indicates some differences in community in the different environment types. Several species 
+Looking at the community at a higher taxonomic resolution shows a clearer picture of which taxa are different in the gut, water, and substrate environments. The gut was dominanted by species Cetobacterium somerae, Akkermansia muciniphila and genre Paludibacter, Parabacteroides, all of which are known to be anaerobic -- a good indicator that these are true gut microbes. C.somerae has been well documented in the gut of freshwater fish such as Nile tilpia **@Tsuchiya2008a** and has been identified in aquaponic systems **@Schmautz2017**. It was abundant in the water environment throughout our system ranging from 4% in the hydroponic tank to 16% in the fish tank. This falls in line with another study which found C. somerae ubiquitous in the water environment in multipe distinct RAS/aquaponic facilities **@Bartelme2019**. In addition, Paludibacter and A. muciniphila were abundant throughout the system which strongly indicates that microbes dervied from the fish gut are a steady presence in minimal mechanical filtration aquaponics.  
+The water envrionment was mostly enriched with common freshwater bacteria found in lakes and rivers such as genre Polynucleobacter, Limnohabitans, Sediminibacterium, and ACK-M1 **@Zwart2002**.  A single ASV classified to ACK-M1 made up over 20% of the water community in the fish tank, sump, and hydroponic tank.  
 
 ## ASV's driving the the dissimlarity between water, substrate and gut environments
 
