@@ -77,7 +77,7 @@ slist = paste0(rep("sample-", times = 16), seq.int(1,16), "")
 sample_info = sample_info[slist,]
 ```
 
-There is a total of `r prettyNum(sum(sequence_sum), big.mark = ",")` quality filtered reads and `r ntaxa(data)` ASVs in the data set. The average reads per sample is `r prettyNum(mean(sequence_sum), big.mark = ",")` The lowest count is `r prettyNum(min(sequence_sum), big.mark = ",")` in sample 10 and the highest is `r prettyNum(max(sequence_sum), big.mark = ",")` in sample 1. An overview of the samples is shown in the following table.
+There was a total of `r prettyNum(sum(sequence_sum), big.mark = ",")` quality filtered reads and `r ntaxa(data)` ASVs in the data set. The average reads per sample was `r prettyNum(mean(sequence_sum), big.mark = ",")` The lowest count was `r prettyNum(min(sequence_sum), big.mark = ",")` in sample 10 and the highest was `r prettyNum(max(sequence_sum), big.mark = ",")` in sample 1. An overview of the samples is shown in the following table.
 
 ```{r echo = FALSE, results = 'asis'}
 library(rmarkdown)
@@ -88,7 +88,7 @@ paged_table(sample_info)
 
 ## Rarefaction
 
-Rarefaction curves were produced using *vegan* function *rarecurve*. Each curve shows the number of ASVs or bacteria species found in a sample at different sequence counts. As the number of 16S sequences increases, the slope of all curves approach zero. This indicates that the sampling depth was satisfactory.
+Rarefaction curves were produced using *vegan* function *rarecurve*. Each curve shows the number of ASVs or bacteria species found in a sample at different sequence counts. As the number of 16S sequences increases, the slope of all curves approach zero. This indicates that the sampling depth was satisfactory and the samples are a fair representation of the bacteria community
 
 ```{r}
 library(vegan)
@@ -112,8 +112,6 @@ r = rarecurve(rcurve_data, step = 20, xlab = "16S Sequences", ylab = "ASVs", lab
 
 ## Alpha Diversity
 Richness and Eveness were used to compare the diversity within samples. Richness refers to the number of ASVs or species and eveness to how they are distrbuted. Pielou’s eveness index $$J=H/ln(S)$$ was derived using *vegan* function *diversity*. 
-
-Overall, the substrate environment had greater diversity than the water environment. The gut was signficantly less diverse than water and substrate enivornments.
 
 ```{r cache=TRUE}
 #function to transpose phyloseq OTU table into vegan OTU matrix 
@@ -159,7 +157,7 @@ pp = ggplot(x, aes(x = Type, y = H))+
 grid.arrange(p,pp, nrow = 1)
 ```
 
-High diversity in the substrate environment is indicative of biofilm. Biofilm 
+Overall, the substrate environment had greater diversity than the water environment. The gut was signficantly less diverse than water and substrate enivornments. 
 
 
 ## Beta Diversity
@@ -216,8 +214,6 @@ doadonis <- function(physeq, category, distance) {
 doadonis(data_rarefy, "Type", "bray")
 ```
 
-
-
 ## Composition
 
 ### Phylum-level
@@ -241,104 +237,86 @@ hmap(data_rarefy_r,1)
 ```
 
 Looking at the community at a higher taxonomic resolution shows a clearer picture of which taxa are different in the gut, water, and substrate environments. The gut was dominanted by species Cetobacterium somerae, Akkermansia muciniphila and genre Paludibacter, Parabacteroides, all of which are known to be anaerobic -- a good indicator that these are true gut microbes. C.somerae has been well documented in the gut of freshwater fish such as Nile tilpia **@Tsuchiya2008a** and has been identified in aquaponic systems **@Schmautz2017**. It was abundant in the water environment throughout our system ranging from 4% in the hydroponic tank to 16% in the fish tank. This falls in line with another study which found C. somerae ubiquitous in the water environment in multipe distinct RAS/aquaponic facilities **@Bartelme2019**. In addition, Paludibacter and A. muciniphila were abundant throughout the system which strongly indicates that microbes dervied from the fish gut are a steady presence in minimal mechanical filtration aquaponics.  
-The water envrionment was mostly enriched with common freshwater bacteria found in lakes and rivers such as genre Polynucleobacter, Limnohabitans, Sediminibacterium, and ACK-M1 **@Zwart2002**.  A single ASV classified to ACK-M1 made up over 20% of the water community in the fish tank, sump, and hydroponic tank.  
+The water envrionment was mostly enriched with common bacteria found in freshwater lakes and rivers such as genre Polynucleobacter, Limnohabitans, Sediminibacterium, and ACK-M1 **@Zwart2002**.  A single ASV classified to ACK-M1 made up over 20% of the water community in the fish tank, sump, and hydroponic tank. Genus Novosphingobium, a metabolically versatile aerobic bacteria that has been isolated from a wide range of habitats **Kumar2017**, was relateively abundant in all water enivronments (1% - 11%). There was a significant presence of heterotrophic bacteria in the water such as genre Flavobacterium and Mycobacterium, 
 
-## ASV's driving the the dissimlarity between water, substrate and gut environments
 
+## ASV's driving the the dissimlarity between aquaponic environments
+
+Based on the previous results, the water community was si . Clearly certain ASVs were more abundant in one environment type than another. To get better understanding of which ASVs were causing th 
 In an attempt to discover which ASVs are causing the water, substrate, and gut communities to differ, I tried out several methods.
 
-### Method one: indicator species analysis in *indicspecies* package.
 
-Function *multipatt* was used to determine a list of ASVs that are associated to the the three different environment types: gut, water, and substrate
+### Method 1: DESeq2 differential abundance
+
+*DESeq2* package provides methods to test for differential expression by use of negative binomial models. Orignally implemented for RNA-Seq, it has been adopted for microbiome analyses in *phyloseq*. 
+I followed this phyloseq tutorial: https://bioconductor.org/packages/devel/bioc/vignettes/phyloseq/inst/doc/phyloseq-mixture-models.html 
 
 ```{r}
-library(indicspecies)
-library(vegan)
-
-#function to transpose phyloseq OTU table into vegan OTU matrix 
-veganotu = function(physeq) {
-  require("vegan")
-  OTU = otu_table(physeq)
-  if (taxa_are_rows(OTU)) {
-    OTU = t(OTU)
-  }
-  return(as(OTU, "matrix"))
-}
-
-v_data = veganotu(data_rarefy)
-
-#psyloseq meta data to data.frame
-v_meta = as.data.frame(as.matrix(sample_data(data)))
-
-#make sure rows are in same order 
-row.names(v_data) == row.names(v_meta)
-                        
-indspec = multipatt(v_data, v_meta$Type, func = "r.g", control = how(nperm=999))
-
-indspec.sign<-as.data.frame(indspec$sign, keep.rownames=TRUE)
-
-indspec_gut = indspec.sign[,c("s.gut", "stat", "p.value")] 
-indspec_gut = subset(indspec_gut, s.gut==1 & p.value <= 0.05)
-indspec_gut = cbind(indspec_gut, as(tax_table(data)[rownames(indspec_gut), ], "matrix"))
-indspec_gut = select(indspec_gut, select= -c(s.gut, Kingdom))
-
-indpsec_water = indspec.sign[,c("s.water", "stat", "p.value")] 
-indpsec_water = subset(indpsec_water, s.water==1 & p.value <= 0.05)
-indpsec_water = cbind(indpsec_water, as(tax_table(data)[rownames(indpsec_water), ], "matrix"))
-indpsec_water = subset(indpsec_water, select = -c(s.water, Kingdom))
-
-indpsec_substrate = indspec.sign[,c("s.substrate", "stat", "p.value")] 
-indpsec_substrate = subset(indpsec_substrate, s.substrate==1 & p.value <= 0.05)
-indpsec_substrate =  cbind(indpsec_substrate, as(tax_table(data)[rownames(indpsec_substrate), ], "matrix"))
-indpsec_substrate = subset(indpsec_substrate, select = -c(s.substrate, Kingdom))
-```
-
-```{r echo = FALSE, results = 'asis'}
-library(rmarkdown)
-paged_table(indspec_gut)
-paged_table(indpsec_water)
-paged_table(indpsec_substrate)
-```
-
-### Method 2: Deseq2 differential abundance
-
-```{r echo = FALSE}
 library(DESeq2)
 
-#use unrarefied data
-#remove gut samples because the low number of gut samples could skew results
+#use unrarefied data 
+#remove gut samples because I'm intersted in difference between water and substrate environment
+#low number of gut samples could skew test
 data_noGut = subset_samples(data, Type != "gut")
 
-diagdds = phyloseq_to_deseq2(data_noGut, ~ Type)
+#convert to deseq2 class using Type as study design factor. Type refers to either water or substrate 
+data_deseq = phyloseq_to_deseq2(data_noGut, ~ Type)
+
+#calculate modified geometric means that ignores zeroes. 
 gm_mean = function(x, na.rm=TRUE){
   exp(sum(log(x[x > 0]), na.rm=na.rm) / length(x))
 }
-geoMeans = apply(counts(diagdds), 1, gm_mean)
-diagdds = estimateSizeFactors(diagdds, geoMeans = geoMeans)
-diagdds = DESeq(diagdds, fitType="local")
+geoMeans = apply(counts(data_deseq), 1, gm_mean)
 
-res = results(diagdds)
+#calculate normalize factors using modified geometric means
+data_deseq = estimateSizeFactors(data_deseq, geoMeans = geoMeans)
+
+#performs differential expression based on the negative binomial distribution. Used default test (Wald). fitType = "local" for dispersion estimates
+data_deseq = DESeq(data_deseq, fitType="local")
+
+#get results of test
+res = results(data_deseq, cooksCutoff = FALSE)
 res = res[order(res$padj, na.last=NA), ]
+
+#select for P value <0.01
 alpha = 0.01
 sigtab = res[(res$padj < alpha), ]
-sigtab = cbind(as(sigtab, "data.frame"), as(tax_table(data_noGut)[rownames(sigtab), ], "matrix"))
-head(sigtab)
 
-posigtab = sigtab[sigtab[, "log2FoldChange"] > 0, ]
-posigtab = posigtab[, c("baseMean", "log2FoldChange", "lfcSE", "padj", "Phylum", "Class", "Family", "Genus", "Species")]
+#add taxonmy to results table
+sigtab = cbind(as(sigtab, "data.frame"), as(tax_table(data_noGut)[rownames(sigtab), ], "matrix"))
+sigtab = sigtab[, c("baseMean", "log2FoldChange", "padj", "Phylum", "Class", "Family", "Genus", "Species")]
 
 ```
+
+The following table shows the results of the differntial abunance test. ASV's that 
 ```{r echo=FALSE, results = 'asis'}
 library(rmarkdown)
-paged_table(posigtab)
+paged_table(sigtab)
 
 ```
 
-### Method 3: SIMPER
+```{r}
+# Phylum order
+x = tapply(sigtab$log2FoldChange, sigtab$Phylum, function(x) max(x))
+x = sort(x, TRUE)
+sigtab$Phylum = factor(as.character(sigtab$Phylum), levels=names(x))
+# Genus order
+x = tapply(sigtab$log2FoldChange, sigtab$Genus, function(x) max(x))
+x = sort(x, TRUE)
+sigtab$Genus = factor(as.character(sigtab$Genus), levels=names(x))
+#plot
+ggplot(sigtab, aes(x=Genus, y=log2FoldChange, color=Phylum)) + geom_point(size=3) + 
+  theme(axis.text.x = element_text(angle = -90, hjust = 0, vjust=0.5))+
+  scale_color_manual(values = phylum_colors2)
+```
 
-SIMPER assesses the average percent contribution of individual ASV's to the dissimilarity of sample types
 
-```{r echo = FALSE}
+### Method 2: SIMPER
+
+*Vegan* function *SIMPER* assesses the average percent contribution of individual ASV's to the Bracy-Curtis dissimilarity of sample types. It answer's the question: which ASV are contributing most to the differencce in water and substrate environments. H
+
+```{r}
+#used on 
 simp = simper(v_data, v_meta$Type, permutations=100)
 simp_sum = summary(simp)
 
@@ -349,5 +327,8 @@ water_substrate =  cbind(water_substrate, as(tax_table(data)[rownames(water_subs
 ```{r echo=FALSE, results = 'asis'}
 library(rmarkdown)
 paged_table(water_substrate)
+```
+```{r}
+
 ```
 
